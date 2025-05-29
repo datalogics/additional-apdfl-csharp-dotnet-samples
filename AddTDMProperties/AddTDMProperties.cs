@@ -23,7 +23,7 @@ namespace AddTDMProperties
 
                 String sInput = Library.ResourceDirectory + "Sample_Input/pdf_intro.pdf";
                 String sOutput = Library.ResourceDirectory + "Sample_Input/TDMRep-out.pdf";
-                String policyURI = "https://www.datalogics.com/tdm_policy_goes_here";
+                String policyURI = "https://docs.datalogics.com/TDMRep/example.json"; // your policy URI here
 
                 if (args.Length > 0)
                     sInput = args[0];
