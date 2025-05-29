@@ -1,0 +1,29 @@
+  {
+      "@context": [
+        "http://www.w3.org/ns/odrl.jsonld",
+        "http://www.w3.org/ns/tdmrep.jsonld"
+    ],
+
+    "@type": "Offer",
+    "profile": "http://www.w3.org/ns/tdmrep",
+    "uid": "https://www.datalogics.com/terms-of-use",
+    "assigner": {
+      "uid": "https://www.datalogics.com/",
+      "vcard:fn": "Datalogics",
+      "vcard:hasAddress": {
+        "vcard:street-address": "1207 Delaware Ave Suite 1810",
+        "vcard:postal-code": "19806",
+        "vcard:locality": "DE",
+        "vcard:country-name": "USA"
+      },
+      "vcard:hasURL": "https://www.datalogics.com/datalogics-contact-us" 
+    },
+    "permission": [{
+      "action": "tdm:mine",
+      "duty": [{
+        "action": "obtainConsent"
+        }
+      ]
+    }
+  ]
+}
