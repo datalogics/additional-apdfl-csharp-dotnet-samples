@@ -1,0 +1,5 @@
+id,category,location,severity,description,recommendedAction,responsibleParty,targetDate,status
+F-001,Electrical,Control panel,Medium,"Two terminal labels are faded and difficult to read during lockout verification.","Replace labels and confirm the isolation sequence during the next planned service.",Facilities team,2026-09-15,Open
+F-002,Airflow,Supply fan,High,"Measured airflow is below the expected operating range after filter replacement; inspect belt tension and damper position.","Schedule a follow-up airflow balance and record the final measurement in the maintenance log.",Mechanical contractor,2026-08-28,Open
+F-003,Safety,Roof access,Low,"The service walkway remains usable, but one caution marker is detached from its mounting surface.","Reattach the marker before the next rooftop service visit.",Site operations,2026-09-05,Planned
+F-004,Documentation,Maintenance binder,Low,"The prior inspection checklist is present, but the emergency contact page uses an outdated extension.","Update the contact page and distribute the revised copy to the control room.",Site operations,2026-08-22,Open
