@@ -1,5 +1,5 @@
+using System.Globalization;
 using Datalogics.PDFL;
-using PdfPath = Datalogics.PDFL.Path;
 
 namespace FieldServiceInspectionReport;
 
@@ -19,34 +19,32 @@ internal sealed class PdfDocumentOptions
     public double MarginBottom { get; init; } = 90;
 }
 
-/// <summary>
-/// Small layout helper for the sample. It deliberately creates ordinary PDF page content
-/// and does not create structure trees, marked content, tags, or accessibility metadata.
-/// </summary>
+/// <summary>Creates the APDFL document and manages its page lifecycle and layout bounds.</summary>
 internal sealed class PdfDocument : IDisposable
 {
     private readonly Document _document;
     private readonly PdfDocumentOptions _options;
-    private readonly Rect _pageRect;
-    private Page? _page;
+    private readonly Rect _pageBounds;
+    private Page? _currentPage;
     private int _pageCount;
 
     private PdfDocument(Document document, PdfDocumentOptions options)
     {
         _document = document;
         _options = options;
-        _pageRect = new Rect(0, 0, options.PageWidth, options.PageHeight);
+        _pageBounds = new Rect(0, 0, options.PageWidth, options.PageHeight);
     }
 
     public static PdfDocument Create(PdfDocumentOptions options)
     {
+        // APDFL Document owns the PDF catalog, metadata, pages, and save lifecycle.
         Document document = new() { Title = options.Title, Producer = options.Producer };
         return new PdfDocument(document, options);
     }
 
     public event Action<PdfDocument>? PageStarted;
-    public Page CurrentPage => _page ?? throw new InvalidOperationException("Call NewPage() first.");
-    public Document PdfDocumentHandle => _document;
+    public Page CurrentPage => _currentPage ?? throw new InvalidOperationException("Call NewPage() first.");
+    public Document Document => _document;
     public int PageNumber => _pageCount;
     public double Left => _options.MarginHorizontal;
     public double Right => _options.PageWidth - _options.MarginHorizontal;
@@ -57,8 +55,10 @@ internal sealed class PdfDocument : IDisposable
 
     public void NewPage()
     {
-        _page?.UpdateContent();
-        _page = _document.CreatePage(_pageCount - 1, _pageRect);
+        // Finalize elements accumulated on the previous APDFL Page before moving the page cursor.
+        _currentPage?.UpdateContent();
+        // APDFL inserts at the current last-page index; -1 appends the first page to an empty document.
+        _currentPage = _document.CreatePage(_pageCount - 1, _pageBounds);
         _pageCount++;
         Y = PageTop;
         PageStarted?.Invoke(this);
@@ -69,80 +69,14 @@ internal sealed class PdfDocument : IDisposable
         if (Y - needed >= PageBottom)
             return false;
 
+        // NewPage raises PageStarted, allowing the renderer to add page-specific APDFL footer elements.
         NewPage();
         return true;
     }
 
-    public IDisposable Section(string heading, TextStyle style, double spaceAfter = 10, double? x = null)
-    {
-        EnsureSpace(style.Size * 2.5);
-        DrawText(heading, x ?? Left, Y - style.Size, style);
-        Y -= style.Size + spaceAfter;
-        return NoopScope.Instance;
-    }
-
-    public void Paragraph(string text, TextStyle style, double x, double width, double leading, double spaceAfter = 6)
-    {
-        foreach (string line in Wrap(text, style, width))
-        {
-            EnsureSpace(leading);
-            DrawText(line, x, Y - style.Size, style);
-            Y -= leading;
-        }
-        Y -= spaceAfter;
-    }
-
-    public void TextBlock(string _, string text, double x, double baseline, TextStyle style)
-        => DrawText(text, x, baseline, style);
-
-    public ListScope List(ListNumbering _)
-        => new(this);
-
-    public TableScope Table(IReadOnlyList<string> headers, IReadOnlyList<double> widths, TextStyle headerStyle, double headerHeight)
-        => new(this, headers, widths, headerStyle, headerHeight);
-
-    public void Image(Image image) => CurrentPage.Content.AddElement(image);
-
-    public void Caption(string text, double x, double baseline, TextStyle style)
-        => DrawText(text, x, baseline, style);
-
-    public void ParagraphUnder(string text, TextStyle style, double x, double top, double width, double leading)
-    {
-        double baseline = top;
-        foreach (string line in Wrap(text, style, width))
-        {
-            DrawText(line, x, baseline, style);
-            baseline -= leading;
-        }
-    }
-
-    public void ArtifactRect(double x, double top, double width, double height, Color fill, Color stroke, double lineWidth = 0.5)
-    {
-        PdfPath path = new()
-        {
-            GraphicState = new GraphicState { FillColor = fill, StrokeColor = stroke, Width = lineWidth },
-            PaintOp = PathPaintOpFlags.Fill | PathPaintOpFlags.Stroke,
-        };
-        path.AddRect(new Point(x, top - height), width, height);
-        CurrentPage.Content.AddElement(path);
-    }
-
-    public void ArtifactText(string text, double x, double baseline, TextStyle style, string _ = "Footer")
-        => DrawText(text, x, baseline, style);
-
-    public void ArtifactRule(double x, double y, double width, Color color)
-    {
-        PdfPath path = new()
-        {
-            GraphicState = new GraphicState { FillColor = color, StrokeColor = color, Width = 0.5 },
-            PaintOp = PathPaintOpFlags.Fill,
-        };
-        path.AddRect(new Point(x, y), width, 0.5);
-        CurrentPage.Content.AddElement(path);
-    }
-
     public IReadOnlyList<string> Wrap(string text, TextStyle style, double width)
     {
+        // TextStyle measures with APDFL Font.MeasureTextWidth, so line breaks match the selected PDF font.
         List<string> lines = new();
         string current = string.Empty;
         foreach (string word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -160,111 +94,41 @@ internal sealed class PdfDocument : IDisposable
         return lines.Count == 0 ? new[] { string.Empty } : lines;
     }
 
-    internal void DrawText(string value, double x, double baseline, TextStyle style)
-    {
-        GraphicState graphics = new() { FillColor = style.Color };
-        TextRun run = new(value, style.Font, graphics, new TextState(), new Matrix(style.Size, 0, 0, style.Size, x, baseline));
-        Datalogics.PDFL.Text text = new();
-        text.AddRun(run);
-        CurrentPage.Content.AddElement(text);
-    }
-
     public void Save(string path)
     {
-        _page?.UpdateContent();
+        _currentPage?.UpdateContent();
         _document.MajorVersion = 2;
         _document.MinorVersion = 0;
+        // Put the title in viewer preferences so PDF viewers can show it instead of the file name.
         PDFDict viewerPreferences = new(_document, false);
         viewerPreferences.Put("DisplayDocTitle", new PDFBoolean(true, _document, false));
         _document.Root.Put("ViewerPreferences", viewerPreferences);
+
+        // The renderer creates subset-embedded Font objects; EmbedFonts writes their font programs before save.
         _document.EmbedFonts(EmbedFlags.None);
         _document.Save(SaveFlags.Full | SaveFlags.Compressed, path);
     }
 
     public void Dispose() => _document.Dispose();
-
-    internal sealed class ListScope : IDisposable
-    {
-        private readonly PdfDocument _document;
-        internal ListScope(PdfDocument document) => _document = document;
-        public void Item(string label, string text, TextStyle style, double x, double labelWidth, double leading)
-        {
-            _document.EnsureSpace(leading);
-            _document.DrawText(label, x, _document.Y - style.Size, style);
-            _document.DrawText(text, x + labelWidth, _document.Y - style.Size, style);
-            _document.Y -= leading;
-        }
-        public void Dispose() { }
-    }
-
-    internal sealed class TableScope : IDisposable
-    {
-        private readonly PdfDocument _document;
-        private readonly IReadOnlyList<string> _headers;
-        private readonly IReadOnlyList<double> _widths;
-        private readonly TextStyle _headerStyle;
-        private readonly double _headerHeight;
-        public Color HeaderBackground { get; set; } = new Color(0, 0, 0);
-
-        internal TableScope(PdfDocument document, IReadOnlyList<string> headers, IReadOnlyList<double> widths, TextStyle headerStyle, double headerHeight)
-        {
-            _document = document;
-            _headers = headers;
-            _widths = widths;
-            _headerStyle = headerStyle;
-            _headerHeight = headerHeight;
-            document.Y -= headerHeight;
-        }
-
-        public void DrawHeaderBand(double top)
-        {
-            double total = 0;
-            foreach (double width in _widths) total += width;
-            _document.ArtifactRect(_document.Left, top, total, _headerHeight, HeaderBackground, HeaderBackground);
-
-            double x = _document.Left;
-            for (int i = 0; i < _headers.Count; i++)
-            {
-                _document.DrawText(_headers[i], x + 5, top - 15, _headerStyle);
-                x += _widths[i];
-            }
-        }
-
-        public RowScope Row(double height)
-        {
-            if (_document.Y - height < _document.PageBottom)
-            {
-                _document.NewPage();
-                DrawHeaderBand(_document.Y);
-                _document.Y -= _headerHeight;
-            }
-            return new RowScope(_document, _widths);
-        }
-
-        public void Dispose() { }
-    }
-
-    internal sealed class RowScope
-    {
-        private readonly PdfDocument _document;
-        private readonly IReadOnlyList<double> _widths;
-        internal RowScope(PdfDocument document, IReadOnlyList<double> widths) { _document = document; _widths = widths; }
-        public void Cell(string text, int column, double x, double top, TextStyle style, double leading, bool isRowHeader = false)
-        {
-            double baseline = top;
-            foreach (string line in _document.Wrap(text, style, _widths[column] - 10))
-            {
-                _document.DrawText(line, x + 5, baseline, style);
-                baseline -= leading;
-            }
-        }
-    }
-
-    private sealed class NoopScope : IDisposable
-    {
-        public static readonly NoopScope Instance = new();
-        public void Dispose() { }
-    }
 }
 
-internal enum ListNumbering { None, Disc, Circle, Square, Decimal, UpperAlpha, LowerAlpha }
+/// <summary>Small RGB color value kept with the PDF layout helpers that consume it.</summary>
+internal readonly record struct PdfColor(double Red, double Green, double Blue)
+{
+    public static PdfColor FromHex(string value)
+    {
+        string hex = value.TrimStart('#');
+        if (hex.Length != 6)
+            throw new ArgumentException("Color must be a six-digit RGB hex value.", nameof(value));
+
+        return new PdfColor(
+            ParseByte(hex.AsSpan(0, 2)) / 255.0,
+            ParseByte(hex.AsSpan(2, 2)) / 255.0,
+            ParseByte(hex.AsSpan(4, 2)) / 255.0);
+    }
+
+    public Color ToPdfColor() => new(Red, Green, Blue);
+
+    private static byte ParseByte(ReadOnlySpan<char> value) =>
+        byte.Parse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+}

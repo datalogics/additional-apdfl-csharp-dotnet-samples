@@ -1,17 +1,16 @@
 using Datalogics.PDFL;
+using PdfPath = Datalogics.PDFL.Path;
 
 namespace FieldServiceInspectionReport;
 
-/// <summary>
-/// Builds the inspection report using ordinary PDF page content. This sample intentionally
-/// does not create a PDF structure tree or tagged content.
-/// </summary>
+/// <summary>Renders the inspection report by adding APDFL text, path, and image elements to pages.</summary>
 internal sealed class PdfInspectionRenderer
 {
     private const double Body = 8.5, Line = 11;
 
-    private readonly Font _regular = new("Times-Roman", FontCreateFlags.Subset);
-    private readonly Font _bold = new("Times-Bold", FontCreateFlags.Subset);
+    // These font programs are supplied in APDFL's Resources/Font package and are embedded as subsets.
+    private readonly Font _regular = new("MyriadPro-Regular", FontCreateFlags.Embedded | FontCreateFlags.Subset);
+    private readonly Font _bold = new("MyriadPro-Bold", FontCreateFlags.Embedded | FontCreateFlags.Subset);
 
     private readonly PdfColor _navy = PdfColor.FromHex("#3D315B");
     private readonly PdfColor _teal = PdfColor.FromHex("#2D6A73");
@@ -39,21 +38,15 @@ internal sealed class PdfInspectionRenderer
         doc.PageStarted += DrawFooter;
         doc.NewPage();
 
-        // The title section stays open for the whole body, so every section below nests
-        // inside it and its headings come out one level down.
-        using (Header(report))
-        {
-            Summary(report);
-            FindingsTable(findings);
-            Evidence(report, imageDirectory);
-            Closing(report);
-        }
-
+        Header(report);
+        Summary(report);
+        FindingsTable(findings);
+        Evidence(report, imageDirectory);
+        Closing(report);
         doc.Save(output);
     }
 
-    /// <summary>Draws the masthead and opens the document's top-level section, which the caller closes.</summary>
-    private IDisposable Header(InspectionReport report)
+    private void Header(InspectionReport report)
     {
         const double headerHeight = 104;
         double headerTop = _doc.PageTop;
@@ -61,76 +54,63 @@ internal sealed class PdfInspectionRenderer
         double statusLeft = _doc.Right - 132;
         double titleWidth = statusLeft - titleX - 18;
 
-        _doc.ArtifactRect(_doc.Left, headerTop, _doc.ContentWidth, headerHeight, Fill(_pale), Fill(_rule));
-
-        // The masthead label restates the document type rather than adding content, so it is
-        // decoration: an artifact, not a structure element.
-        _doc.ArtifactText("FIELD SERVICE INSPECTION REPORT", titleX, headerTop - 21, Style(_bold, 9.5, _teal), "Header");
+        DrawRectangle(_doc.Left, headerTop, _doc.ContentWidth, headerHeight, Fill(_pale), Fill(_rule));
+        DrawText("FIELD SERVICE INSPECTION REPORT", titleX, headerTop - 21, Style(_bold, 9.5, _teal));
 
         TextStyle titleStyle = Style(_bold, 18, _navy);
         IReadOnlyList<string> titleLines = _doc.Wrap(report.Title, titleStyle, titleWidth);
         double titleBaseline = headerTop - 45;
 
         _doc.Y = titleBaseline + titleStyle.Size;
-        IDisposable titleSection = _doc.Section(titleLines[0], titleStyle, spaceAfter: 0, x: titleX);
+        DrawSectionTitle(titleLines[0], titleStyle, spaceAfter: 0, x: titleX);
 
         for (int i = 1; i < titleLines.Count; i++)
-        {
-            _doc.TextBlock("P", titleLines[i], titleX, titleBaseline - (i * 20), titleStyle);
-        }
+            DrawText(titleLines[i], titleX, titleBaseline - (i * 20), titleStyle);
 
         double metadataY = titleBaseline - (titleLines.Count * 20) + 1;
-        _doc.TextBlock(
-            "P",
-            $"{report.ReportNumber}  |  Inspection date: {report.InspectionDate}",
-            titleX,
-            metadataY,
-            Style(_regular, Body, _muted));
+        DrawText($"{report.ReportNumber}  |  Inspection date: {report.InspectionDate}",
+            titleX, metadataY, Style(_regular, Body, _muted));
 
         PdfColor status = StatusColor(report.OverallStatus);
         double statusTop = headerTop - 54;
-        _doc.ArtifactRect(statusLeft, statusTop, 116, 27, Fill(status), Fill(status));
-        _doc.TextBlock("P", report.OverallStatus.ToUpperInvariant(), statusLeft + 8, statusTop - 18, Style(_bold, 7.5, _white));
+        DrawRectangle(statusLeft, statusTop, 116, 27, Fill(status), Fill(status));
+        DrawText(report.OverallStatus.ToUpperInvariant(), statusLeft + 8, statusTop - 18, Style(_bold, 7.5, _white));
 
         _doc.Y = headerTop - headerHeight - 24;
-        return titleSection;
     }
 
     private void Summary(InspectionReport report)
     {
-        using IDisposable section = _doc.Section("Inspection summary", Style(_bold, 13, _navy));
+        DrawSectionTitle("Inspection summary", Style(_bold, 13, _navy));
 
         double panelTop = _doc.Y;
-        _doc.ArtifactRect(_doc.Left, panelTop, 250, 96, Fill(_white), Fill(_rule));
-        _doc.ArtifactRect(_doc.Left + 266, panelTop, _doc.ContentWidth - 266, 96, Fill(_white), Fill(_rule));
+        DrawRectangle(_doc.Left, panelTop, 250, 96, Fill(_white), Fill(_rule));
+        DrawRectangle(_doc.Left + 266, panelTop, _doc.ContentWidth - 266, 96, Fill(_white), Fill(_rule));
 
         TextStyle label = Style(_bold, 8, _teal);
         TextStyle strong = Style(_bold, 11, _ink);
         TextStyle plain = Style(_regular, Body, _ink);
         TextStyle quiet = Style(_regular, Body, _muted);
 
-        _doc.TextBlock("P", "CUSTOMER / SITE", _doc.Left + 14, panelTop - 18, label);
-        _doc.TextBlock("P", report.Customer.Name, _doc.Left + 14, panelTop - 38, strong);
-        _doc.TextBlock("P", report.Customer.Contact, _doc.Left + 14, panelTop - 54, quiet);
-        _doc.TextBlock("P", report.Site.Name, _doc.Left + 14, panelTop - 70, plain);
-        _doc.TextBlock("P", report.Site.Address, _doc.Left + 14, panelTop - 84, Style(_regular, 8, _muted));
+        DrawText("CUSTOMER / SITE", _doc.Left + 14, panelTop - 18, label);
+        DrawText(report.Customer.Name, _doc.Left + 14, panelTop - 38, strong);
+        DrawText(report.Customer.Contact, _doc.Left + 14, panelTop - 54, quiet);
+        DrawText(report.Site.Name, _doc.Left + 14, panelTop - 70, plain);
+        DrawText(report.Site.Address, _doc.Left + 14, panelTop - 84, Style(_regular, 8, _muted));
 
-        _doc.TextBlock("P", "INSPECTOR", _doc.Left + 280, panelTop - 18, label);
-        _doc.TextBlock("P", report.Inspector.Name, _doc.Left + 280, panelTop - 38, strong);
-        _doc.TextBlock("P", report.Inspector.Role, _doc.Left + 280, panelTop - 54, quiet);
-        _doc.TextBlock("P", $"Equipment: {report.Site.EquipmentId}", _doc.Left + 280, panelTop - 76, plain);
+        DrawText("INSPECTOR", _doc.Left + 280, panelTop - 18, label);
+        DrawText(report.Inspector.Name, _doc.Left + 280, panelTop - 38, strong);
+        DrawText(report.Inspector.Role, _doc.Left + 280, panelTop - 54, quiet);
+        DrawText($"Equipment: {report.Site.EquipmentId}", _doc.Left + 280, panelTop - 76, plain);
 
         _doc.Y = panelTop - 122;
-        _doc.Paragraph(report.Summary, plain, _doc.Left, _doc.ContentWidth, Line);
-
+        DrawParagraph(report.Summary, plain, _doc.Left, _doc.ContentWidth, Line);
         Checklist();
     }
 
     private void Checklist()
     {
-        using IDisposable section = _doc.Section("Inspection checklist", Style(_bold, 11, _navy), spaceAfter: 6);
-        using PdfDocument.ListScope list = _doc.List(ListNumbering.Disc);
-
+        DrawSectionTitle("Inspection checklist", Style(_bold, 11, _navy), spaceAfter: 6);
         TextStyle plain = Style(_regular, Body, _ink);
         string[] items =
         {
@@ -141,8 +121,10 @@ internal sealed class PdfInspectionRenderer
 
         foreach (string item in items)
         {
-            // The marker is a real Lbl, not a hyphen glued onto the text.
-            list.Item("•", item, plain, _doc.Left + 8, labelWidth: 12, leading: Line);
+            _doc.EnsureSpace(Line);
+            DrawText("•", _doc.Left + 8, _doc.Y - plain.Size, plain);
+            DrawText(item, _doc.Left + 20, _doc.Y - plain.Size, plain);
+            _doc.Y -= Line;
         }
 
         _doc.Y -= 10;
@@ -150,19 +132,16 @@ internal sealed class PdfInspectionRenderer
 
     private void FindingsTable(IReadOnlyList<Finding> findings)
     {
-        using IDisposable section = _doc.Section("Findings and corrective actions", Style(_bold, 13, _navy));
+        DrawSectionTitle("Findings and corrective actions", Style(_bold, 13, _navy));
 
         double[] widths = { 40, 64, 70, 51, 163, 75, 53 };
         string[] headers = { "ID", "Category", "Location", "Severity", "Description", "Action", "Status" };
-
-        double bandTop = _doc.Y;
-        using PdfDocument.TableScope table = _doc.Table(headers, widths, Style(_bold, 7.5, _white), headerHeight: 24);
-        table.HeaderBackground = Fill(_navy);
-        table.DrawHeaderBand(bandTop);
+        const double headerHeight = 24;
+        TextStyle headerStyle = Style(_bold, 7.5, _white);
+        DrawTableHeader(headers, widths, headerStyle, headerHeight);
 
         TextStyle plain = Style(_regular, Body, _ink);
         TextStyle idStyle = Style(_bold, Body, _ink);
-
         foreach (Finding finding in findings)
         {
             string[] values =
@@ -173,24 +152,20 @@ internal sealed class PdfInspectionRenderer
 
             int lines = 1;
             for (int i = 0; i < values.Length; i++)
-            {
                 lines = Math.Max(lines, _doc.Wrap(values[i], plain, widths[i] - 10).Count);
-            }
 
             double height = Math.Max(28, (lines * Line) + 10);
-            PdfDocument.RowScope row = table.Row(height);
+            if (_doc.Y - height < _doc.PageBottom)
+                DrawTableHeaderOnNewPage(headers, widths, headerStyle, headerHeight);
 
-            _doc.ArtifactRect(_doc.Left, _doc.Y + 5, Sum(widths), height, Fill(_white), Fill(_rule));
-
+            DrawRectangle(_doc.Left, _doc.Y + 5, Sum(widths), height, Fill(_white), Fill(_rule));
             double x = _doc.Left;
             for (int i = 0; i < values.Length; i++)
             {
                 TextStyle style = i == 0
                     ? idStyle
                     : i == 3 ? Style(_regular, Body, StatusColor(finding.Severity)) : plain;
-
-                // Column zero identifies the row, so it is a TH with /Scope Row.
-                row.Cell(values[i], i, x, _doc.Y - 10, style, Line, isRowHeader: i == 0);
+                DrawWrappedCell(values[i], x + 5, _doc.Y - 10, widths[i] - 10, height, style, Line);
                 x += widths[i];
             }
 
@@ -198,21 +173,62 @@ internal sealed class PdfInspectionRenderer
         }
     }
 
+    private void DrawTableHeaderOnNewPage(
+        IReadOnlyList<string> headers,
+        IReadOnlyList<double> widths,
+        TextStyle style,
+        double height)
+    {
+        _doc.NewPage();
+        DrawTableHeader(headers, widths, style, height);
+    }
+
+    private void DrawTableHeader(
+        IReadOnlyList<string> headers,
+        IReadOnlyList<double> widths,
+        TextStyle style,
+        double height)
+    {
+        double totalWidth = Sum(widths);
+        double top = _doc.Y;
+        DrawRectangle(_doc.Left, top, totalWidth, height, Fill(_navy), Fill(_navy));
+
+        // Draw the APDFL text elements after the band so the labels remain visible over its fill.
+        double x = _doc.Left;
+        for (int i = 0; i < headers.Count; i++)
+        {
+            DrawText(headers[i], x + 5, top - 15, style);
+            x += widths[i];
+        }
+
+        _doc.Y -= height;
+    }
+
+    private void DrawWrappedCell(string value, double x, double top, double width, double height, TextStyle style, double leading)
+    {
+        double baseline = top;
+        foreach (string line in _doc.Wrap(value, style, width))
+        {
+            if (top - baseline + leading > height)
+                break;
+            DrawText(line, x, baseline, style);
+            baseline -= leading;
+        }
+    }
+
     private void Evidence(InspectionReport report, string imageDirectory)
     {
         if (report.Photographs is null || report.Photographs.Count == 0)
-        {
             return;
-        }
 
         _doc.NewPage();
-        using IDisposable section = _doc.Section("Photographic evidence", Style(_bold, 13, _navy));
+        DrawSectionTitle("Photographic evidence", Style(_bold, 13, _navy));
 
         foreach (Photo photo in report.Photographs)
         {
             _doc.EnsureSpace(175);
 
-            using Image image = new(System.IO.Path.Combine(imageDirectory, photo.File), _doc.PdfDocumentHandle);
+            using Image image = new(System.IO.Path.Combine(imageDirectory, photo.File), _doc.Document);
             double scale = Math.Min(190 / image.Matrix.A, 125 / image.Matrix.D);
             image.Scale(scale, scale);
 
@@ -220,12 +236,9 @@ internal sealed class PdfInspectionRenderer
             double imageBottom = _doc.Y - 130;
             image.Translate(imageLeft, imageBottom);
 
-            double textLeft = _doc.Left + 210;
-            double captionBaseline = _doc.Y - 20;
-
-            _doc.Image(image);
-            _doc.Caption(photo.Caption, textLeft, captionBaseline, Style(_bold, 10, _ink));
-
+            // APDFL's Image is a page-content element; adding it places the scaled image in the PDF.
+            _doc.CurrentPage.Content.AddElement(image);
+            DrawText(photo.Caption, _doc.Left + 210, _doc.Y - 20, Style(_bold, 10, _ink));
             _doc.Y -= 160;
         }
     }
@@ -233,43 +246,86 @@ internal sealed class PdfInspectionRenderer
     private void Closing(InspectionReport report)
     {
         _doc.EnsureSpace(100);
-        using IDisposable section = _doc.Section("Closing certification", Style(_bold, 13, _navy));
+        DrawSectionTitle("Closing certification", Style(_bold, 13, _navy));
 
         string text = report.CertificationText
             ?? "The inspection record above reflects the conditions observed at the time of "
              + "inspection. Follow-up actions should be tracked through the responsible service process.";
 
-        _doc.Paragraph(text, Style(_regular, Body, _ink), _doc.Left, _doc.ContentWidth, Line);
-        _doc.TextBlock(
-            "P",
-            $"Prepared by {report.Inspector.Name}  |  APDFL sample output",
-            _doc.Left,
-            _doc.Y - 12,
-            Style(_regular, 8, _muted));
+        DrawParagraph(text, Style(_regular, Body, _ink), _doc.Left, _doc.ContentWidth, Line);
+        DrawText($"Prepared by {report.Inspector.Name}  |  APDFL sample output",
+            _doc.Left, _doc.Y - 12, Style(_regular, 8, _muted));
     }
 
-    /// <summary>Running foot: pagination artifacts, so it stays out of the reading order.</summary>
     private void DrawFooter(PdfDocument doc)
     {
         TextStyle style = Style(_regular, 7.5, _muted);
-        doc.ArtifactRule(doc.Left, doc.PageBottom - 26, doc.ContentWidth, Fill(_rule));
-        doc.ArtifactText("Northstar Facilities  |  Confidential field record", doc.Left, doc.PageBottom - 40, style);
-        doc.ArtifactText($"Page {doc.PageNumber}", doc.Right - 40, doc.PageBottom - 40, style);
+        DrawRule(doc.Left, doc.PageBottom - 26, doc.ContentWidth, Fill(_rule));
+        DrawText("Northstar Facilities  |  Confidential field record", doc.Left, doc.PageBottom - 40, style);
+        DrawText($"Page {doc.PageNumber}", doc.Right - 40, doc.PageBottom - 40, style);
+    }
+
+    private void DrawSectionTitle(string text, TextStyle style, double spaceAfter = 10, double? x = null)
+    {
+        _doc.EnsureSpace(style.Size * 2.5);
+        DrawText(text, x ?? _doc.Left, _doc.Y - style.Size, style);
+        _doc.Y -= style.Size + spaceAfter;
+    }
+
+    private void DrawParagraph(string text, TextStyle style, double x, double width, double leading, double spaceAfter = 6)
+    {
+        foreach (string line in _doc.Wrap(text, style, width))
+        {
+            _doc.EnsureSpace(leading);
+            DrawText(line, x, _doc.Y - style.Size, style);
+            _doc.Y -= leading;
+        }
+
+        _doc.Y -= spaceAfter;
+    }
+
+    private void DrawText(string value, double x, double baseline, TextStyle style)
+    {
+        // APDFL Text and TextRun objects place measured glyph runs into the current page content.
+        GraphicState graphics = new() { FillColor = style.Color };
+        TextRun run = new(value, style.Font, graphics, new TextState(), new Matrix(style.Size, 0, 0, style.Size, x, baseline));
+        Datalogics.PDFL.Text text = new();
+        text.AddRun(run);
+        _doc.CurrentPage.Content.AddElement(text);
+    }
+
+    private void DrawRectangle(double x, double top, double width, double height, Color fill, Color stroke, double lineWidth = 0.5)
+    {
+        // APDFL Path geometry is added to page content and painted with the supplied colors.
+        PdfPath path = new()
+        {
+            GraphicState = new GraphicState { FillColor = fill, StrokeColor = stroke, Width = lineWidth },
+            PaintOp = PathPaintOpFlags.Fill | PathPaintOpFlags.Stroke,
+        };
+        path.AddRect(new Point(x, top - height), width, height);
+        _doc.CurrentPage.Content.AddElement(path);
+    }
+
+    private void DrawRule(double x, double y, double width, Color color)
+    {
+        PdfPath path = new()
+        {
+            GraphicState = new GraphicState { FillColor = color, StrokeColor = color, Width = 0.5 },
+            PaintOp = PathPaintOpFlags.Fill,
+        };
+        path.AddRect(new Point(x, y), width, 0.5);
+        _doc.CurrentPage.Content.AddElement(path);
     }
 
     private static double Sum(IReadOnlyList<double> values)
     {
         double total = 0;
         foreach (double value in values)
-        {
             total += value;
-        }
-
         return total;
     }
 
     private static TextStyle Style(Font font, double size, PdfColor color) => new(font, size, color.ToPdfColor());
-
     private static Color Fill(PdfColor color) => color.ToPdfColor();
 
     private static PdfColor StatusColor(string value) =>

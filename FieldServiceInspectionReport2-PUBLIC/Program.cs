@@ -5,10 +5,12 @@ using Datalogics.PDFL;
 
 namespace FieldServiceInspectionReport;
 
+// Builds a field-service inspection PDF from JSON report data, CSV findings, and image files using APDFL.
 internal static class Program
 {
     public static int Main(string[] args)
     {
+        Console.WriteLine("CreateFieldServiceInspectionReport: create an inspection PDF from JSON, CSV, and image inputs using APDFL.");
         try
         {
             Paths paths = Paths.From(args);
@@ -17,9 +19,12 @@ internal static class Program
             Validate(report, paths);
             List<Finding> findings = CsvReader.Read(paths.Csv);
 
+            // LM evaluations can provide their Datalogics activation key through this process-only environment variable.
             string? licenseKey = Environment.GetEnvironmentVariable("APDFL_LICENSE_KEY");
             if (!string.IsNullOrWhiteSpace(licenseKey))
+            {
                 Library.LicenseKey = licenseKey.Trim();
+            }
 
             using Library library = new();
             new PdfInspectionRenderer().Render(report, findings, paths.Images, paths.Output);
