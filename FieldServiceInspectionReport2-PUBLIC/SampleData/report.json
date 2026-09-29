@@ -1,0 +1,16 @@
+{
+  "reportNumber": "INS-2026-0042",
+  "title": "Annual Equipment Inspection Report",
+  "inspectionDate": "2026-08-12",
+  "overallStatus": "Attention Required",
+  "summary": "The primary system is operational, with two items requiring scheduled corrective action before the next seasonal service window.",
+  "inspector": { "name": "Jordan Lee", "role": "Certified Field Inspector" },
+  "customer": { "name": "Northstar Facilities", "contact": "Morgan Ellis" },
+  "site": { "name": "Riverbend Operations Center", "address": "1250 Harbor Way, Madison, WI 53703", "equipmentId": "HVAC-04" },
+  "certificationText": "I certify that the observations and recommendations in this report reflect the equipment condition observed during the scheduled inspection.",
+  "photographs": [
+    { "file": "control-panel.png", "caption": "Main control panel and status display" },
+    { "file": "air-handler.png", "caption": "Air-handler access panel and casing" }
+  ]
+}
+
